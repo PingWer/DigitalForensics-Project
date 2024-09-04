@@ -2,7 +2,8 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 from PIL import Image, ImageTk
 import cv2
-from denoise import denoise_image
+import deartifact  # File per la rimozione degli artefatti
+import denoise     # Nuovo file per la rimozione del rumore periodico
 
 class DenoisingApp:
     def __init__(self, root):
@@ -16,16 +17,11 @@ class DenoisingApp:
         self.d_var = tk.IntVar(value=9)
         self.sigmaColor_var = tk.DoubleVar(value=75)
         self.sigmaSpace_var = tk.DoubleVar(value=75)
-        self.filter_type = tk.StringVar(value='non_local_means')
+        self.freq_threshold_var = tk.DoubleVar(value=10)
+
         self.image_path = None
         self.original_image = None
-        self.denoised_image = None
-
-        # Variabili per lo zoom e pan
-        self.zoom_scale_original = 1.0
-        self.zoom_scale_denoised = 1.0
-        self.last_x = None
-        self.last_y = None
+        self.processed_image = None
 
         # Layout
         self.create_widgets()
@@ -33,9 +29,13 @@ class DenoisingApp:
     def create_widgets(self):
         tk.Label(self.root, text="Scegli un filtro per denoising:").pack(pady=10)
 
+        # Opzioni per il tipo di filtro
+        self.filter_type = tk.StringVar(value='non_local_means')
         tk.Radiobutton(self.root, text="Non-Local Means", variable=self.filter_type, value='non_local_means', command=self.update_ui).pack(anchor=tk.W)
         tk.Radiobutton(self.root, text="Filtro Mediano", variable=self.filter_type, value='median', command=self.update_ui).pack(anchor=tk.W)
         tk.Radiobutton(self.root, text="Filtro Bilaterale", variable=self.filter_type, value='bilateral', command=self.update_ui).pack(anchor=tk.W)
+        tk.Radiobutton(self.root, text="Rimozione Rumore Periodico", variable=self.filter_type, value='periodic_noise', command=self.update_ui).pack(anchor=tk.W)
+        tk.Radiobutton(self.root, text="Rimozione Rumore Periodico Automatico", variable=self.filter_type, value='auto_periodic_noise', command=self.update_ui).pack(anchor=tk.W)
 
         tk.Button(self.root, text="Carica Immagine", command=self.load_image).pack(pady=10)
         tk.Button(self.root, text="Salva Immagine", command=self.save_image).pack(pady=10)
@@ -50,25 +50,25 @@ class DenoisingApp:
         self.original_canvas = tk.Canvas(self.image_frame, bg='gray', width=400, height=600)
         self.original_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.denoised_canvas = tk.Canvas(self.image_frame, bg='gray', width=400, height=600)
-        self.denoised_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.processed_canvas = tk.Canvas(self.image_frame, bg='gray', width=400, height=600)
+        self.processed_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.update_ui()
 
     def load_image(self):
-        self.image_path = filedialog.askopenfilename(title="Seleziona l'immagine di input", filetypes=[("Immagini", "*.jpg;*.png")])
+        self.image_path = filedialog.askopenfilename(title="Seleziona l'immagine di input", filetypes=[("Immagini", "*.jpg;*.png; *.jpeg; *.webp")])
         if self.image_path:
             self.update_image()
 
     def save_image(self):
-        if self.denoised_image is None:
-            tk.messagebox.showwarning("Salvataggio Immagine", "Nessuna immagine denoised da salvare.")
+        if self.processed_image is None:
+            tk.messagebox.showwarning("Salvataggio Immagine", "Nessuna immagine processata da salvare.")
             return
         
         save_path = filedialog.asksaveasfilename(title="Salva Immagine", defaultextension=".png", filetypes=[("PNG files", "*.png")])
         if save_path:
-            denoised_pil_image = Image.fromarray(self.denoised_image)
-            denoised_pil_image.save(save_path)
+            processed_pil_image = Image.fromarray(self.processed_image)
+            processed_pil_image.save(save_path)
             tk.messagebox.showinfo("Salvataggio Immagine", f"Immagine salvata come {save_path}")
 
     def update_ui(self):
@@ -95,53 +95,59 @@ class DenoisingApp:
             tk.Label(self.param_frame, text="sigmaSpace:").pack(anchor=tk.W)
             tk.Scale(self.param_frame, variable=self.sigmaSpace_var, from_=0, to_=200, orient=tk.HORIZONTAL, command=lambda x: self.update_image()).pack(fill=tk.X)
 
+        elif filter_type == 'periodic_noise':
+            tk.Label(self.param_frame, text="Soglia di Frequenza:").pack(anchor=tk.W)
+            tk.Scale(self.param_frame, variable=self.freq_threshold_var, from_=1000, to_=0, orient=tk.HORIZONTAL, command=lambda x: self.update_image()).pack(fill=tk.X)
+            
+        elif filter_type == 'auto_periodic_noise':
+            tk.Label(self.param_frame, text="Soglia di Frequenza:").pack(anchor=tk.W)
+            tk.Scale(self.param_frame, variable=self.freq_threshold_var, from_=1000, to_=0, orient=tk.HORIZONTAL, command=lambda x: self.update_image()).pack(fill=tk.X)
+
     def update_image(self):
         if not self.image_path:
             return
 
-        params = {}
         filter_type = self.filter_type.get()
-
-        if filter_type == 'non_local_means':
-            params = {'h': self.h_var.get(), 'hColor': self.hColor_var.get()}
-        elif filter_type == 'median':
-            params = {'ksize': int(self.ksize_var.get())}
-        elif filter_type == 'bilateral':
-            params = {'d': int(self.d_var.get()), 'sigmaColor': self.sigmaColor_var.get(), 'sigmaSpace': self.sigmaSpace_var.get()}
-
         image = cv2.imread(self.image_path)
         if image is None:
             return
 
         self.original_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        self.denoised_image = denoise_image(image, filter_type=filter_type, **params)
-        self.denoised_image = cv2.cvtColor(self.denoised_image, cv2.COLOR_BGR2RGB)
+        
+        if filter_type == 'periodic_noise':
+            self.processed_image = denoise.remove_periodic_noise(image, fraction=self.freq_threshold_var.get())
+        elif filter_type == 'auto_periodic_noise':
+            self.processed_image = denoise.remove_auto_periodic_noise(image, fraction=self.freq_threshold_var.get())
+        else:
+            self.processed_image = deartifact.denoise_image(image, filter_type=filter_type, **self.get_filter_params())
 
-        self.zoom_scale_original = 1.0
-        self.zoom_scale_denoised = 1.0
-
+        self.processed_image = cv2.cvtColor(self.processed_image, cv2.COLOR_BGR2RGB)
         self.display_images()
 
+    def get_filter_params(self):
+        filter_type = self.filter_type.get()
+        if filter_type == 'non_local_means':
+            return {'h': self.h_var.get(), 'hColor': self.hColor_var.get()}
+        elif filter_type == 'median':
+            return {'ksize': self.ksize_var.get()}
+        elif filter_type == 'bilateral':
+            return {'d': self.d_var.get(), 'sigmaColor': self.sigmaColor_var.get(), 'sigmaSpace': self.sigmaSpace_var.get()}
+        return {}
+
     def display_images(self):
-        # Mostra immagine originale nel canvas di sinistra
         self.show_image(self.original_image, self.original_canvas, 'original')
-        
-        # Mostra immagine denoised nel canvas di destra
-        self.show_image(self.denoised_image, self.denoised_canvas, 'denoised')
+        self.show_image(self.processed_image, self.processed_canvas, 'processed')
 
     def show_image(self, image, canvas, canvas_type):
         image_pil = Image.fromarray(image)
-        canvas.image_pil = image_pil  # Salva l'immagine PIL per lo zoom
+        canvas.image_pil = image_pil
         tk_image = ImageTk.PhotoImage(image_pil)
-        canvas.tk_image = tk_image  # Salva l'immagine Tkinter per evitare che venga eliminata dal garbage collector
+        canvas.tk_image = tk_image
         canvas.delete("all")
         canvas.create_image(0, 0, anchor=tk.NW, image=tk_image)
         canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
-        # Centra l'immagine
         self.center_image(canvas)
-
-        # Associa il pan e lo zoom ai canvas
         self.bind_canvas_events(canvas, canvas_type)
 
     def bind_canvas_events(self, canvas, canvas_type):
@@ -150,29 +156,19 @@ class DenoisingApp:
         canvas.bind("<MouseWheel>", lambda event, cnv=canvas: self.zoom(event, cnv, canvas_type))
 
     def zoom(self, event, canvas, canvas_type):
-        # Zoom in
         if event.delta > 0:
             scale_factor = 1.2
-        # Zoom out
         elif event.delta < 0:
             scale_factor = 0.8
 
-        # Aggiorna la scala dello zoom
-        if canvas_type == 'original':
-            self.zoom_scale_original *= scale_factor
-        elif canvas_type == 'denoised':
-            self.zoom_scale_denoised *= scale_factor
-
-        # Ridimensiona l'immagine
-        new_size = (int(canvas.image_pil.width * (self.zoom_scale_original if canvas_type == 'original' else self.zoom_scale_denoised)),
-                    int(canvas.image_pil.height * (self.zoom_scale_original if canvas_type == 'original' else self.zoom_scale_denoised)))
+        new_size = (int(canvas.image_pil.width * scale_factor),
+                    int(canvas.image_pil.height * scale_factor))
         resized_image = canvas.image_pil.resize(new_size, Image.LANCZOS)
         canvas.tk_image = ImageTk.PhotoImage(resized_image)
         canvas.delete("all")
         canvas.create_image(0, 0, anchor=tk.NW, image=canvas.tk_image)
         canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
-        # Centra l'immagine dopo il ridimensionamento
         self.center_image(canvas)
 
     def pan(self, event, canvas, canvas_type):

@@ -1,53 +1,99 @@
-import cv2
 import numpy as np
+import cv2
+from scipy.fft import fft2, ifft2, fftshift, ifftshift
+import matplotlib.pyplot as plt
 
-def apply_non_local_means(image, h=10, hColor=10):
+def filter_frequencies(image, threshold_factor=2.0):
     """
-    Applica il filtro Non-Local Means all'immagine con parametri specificati.
+    Rimuove frequenze anomale basate sulla magnitudine.
+    
+    Parameters:
+    - image: L'immagine di input (in formato numpy array).
+    - threshold_factor: Fattore di soglia per determinare le frequenze anomale.
+    
+    Returns:
+    - L'immagine filtrata.
+    """
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    image = image.astype(float) / 255.0
+    F = fft2(image)
+    Fshift = fftshift(F)
+    
+    magnitude_spectrum = np.abs(Fshift)
+    
+    # Calcola la soglia dinamica basata su magnitudine
+    mean_magnitude = np.mean(magnitude_spectrum)
+    std_magnitude = np.std(magnitude_spectrum)
+    threshold = mean_magnitude + threshold_factor * std_magnitude
+    
+    # Crea una maschera per le frequenze sotto la soglia
+    mask = magnitude_spectrum <= threshold
+    
+    Fshift_filtered = Fshift * mask
+    F_ishift = ifftshift(Fshift_filtered)
+    img_back = ifft2(F_ishift)
+    
+    img_back = np.abs(img_back)
+    img_back = np.clip(img_back * 255.0, 0, 255).astype(np.uint8)
+    
+    return img_back
 
-    :param image: Immagine di input.
-    :param h: Parametro per il denoising.
-    :param hColor: Parametro per il denoising del colore.
-    :return: Immagine denoised.
-    """
-    return cv2.fastNlMeansDenoisingColored(image, None, h=h, hColor=hColor, templateWindowSize=7, searchWindowSize=21)
 
-def apply_median_filter(image, ksize=5):
+def filter_frequencies_auto(image, threshold_factor=2.0):
     """
-    Applica il filtro mediano all'immagine con dimensione del kernel specificata.
+    Rimuove il rumore dalle frequenze dell'immagine utilizzando un filtro automatico.
+    
+    Parameters:
+    - image: L'immagine di input (in formato numpy array).
+    - threshold_factor: Fattore di soglia per determinare le frequenze anomale.
+    
+    Returns:
+    - L'immagine filtrata.
+    """
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Normalizzazione dell'immagine
+    image = image.astype(float) / 255.0
+    
+    # Trasformata di Fourier
+    F = fft2(image)
+    Fshift = fftshift(F)
+    
+    # Calcolo dello spettro delle magnitudini
+    magnitude_spectrum = np.abs(Fshift)
+    
+    # Calcolo della soglia dinamica
+    mean_magnitude = np.mean(magnitude_spectrum)
+    std_magnitude = np.std(magnitude_spectrum)
+    threshold = mean_magnitude + threshold_factor * std_magnitude
+    
+    # Creazione della maschera per le frequenze sotto la soglia
+    mask = magnitude_spectrum <= threshold
+    
+    # Applicazione del filtro
+    Fshift_filtered = Fshift * mask
+    F_ishift = ifftshift(Fshift_filtered)
+    img_back = ifft2(F_ishift)
+    
+    # Normalizzazione dell'immagine filtrata
+    img_back = np.abs(img_back)
+    img_back = np.clip(img_back * 255.0, 0, 255).astype(np.uint8)
+    
+    return img_back
 
-    :param image: Immagine di input.
-    :param ksize: Dimensione del kernel (deve essere un numero dispari).
-    :return: Immagine denoised.
-    """
-    return cv2.medianBlur(image, ksize=ksize)
+def remove_periodic_noise (image, fraction):
 
-def apply_bilateral_filter(image, d=9, sigmaColor=75, sigmaSpace=75):
-    """
-    Applica il filtro bilaterale all'immagine con parametri specificati.
+    # Rimuove le frequenze anomale
+    filtered_img = filter_frequencies(image, fraction)
 
-    :param image: Immagine di input.
-    :param d: Diametro del pixel vicino.
-    :param sigmaColor: Sigma per il filtro colore.
-    :param sigmaSpace: Sigma per la distanza spaziale.
-    :return: Immagine denoised.
-    """
-    return cv2.bilateralFilter(image, d=d, sigmaColor=sigmaColor, sigmaSpace=sigmaSpace)
+    return filtered_img
 
-def denoise_image(image, filter_type='non_local_means', **kwargs):
-    """
-    Applica il filtro specificato all'immagine con parametri variabili.
+def remove_auto_periodic_noise (image, fraction):
 
-    :param image: Immagine di input.
-    :param filter_type: Tipo di filtro da applicare ('non_local_means', 'median', 'bilateral').
-    :param kwargs: Parametri del filtro.
-    :return: Immagine processata.
-    """
-    if filter_type == 'non_local_means':
-        return apply_non_local_means(image, **kwargs)
-    elif filter_type == 'median':
-        return apply_median_filter(image, **kwargs)
-    elif filter_type == 'bilateral':
-        return apply_bilateral_filter(image, **kwargs)
-    else:
-        raise ValueError(f"Filtro non riconosciuto: {filter_type}")
+    # Rimuove le frequenze anomale
+    filtered_img = filter_frequencies_auto(image, fraction)
+
+    return filtered_img

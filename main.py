@@ -1,9 +1,10 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
-import deartifact  # File per la rimozione degli artefatti
-import denoise     # Nuovo file per la rimozione del rumore periodico
+import deartifact
+import denoise
+import compare
 
 class DenoisingApp:
     def __init__(self, root):
@@ -18,6 +19,9 @@ class DenoisingApp:
         self.sigmaColor_var = tk.DoubleVar(value=75)
         self.sigmaSpace_var = tk.DoubleVar(value=75)
         self.freq_threshold_var = tk.DoubleVar(value=10)
+        self.rect_start = None
+        self.rect_end = None
+        self.selection_rect = None
 
         self.image_path = None
         self.original_image = None
@@ -39,6 +43,9 @@ class DenoisingApp:
 
         tk.Button(self.root, text="Carica Immagine", command=self.load_image).pack(pady=10)
         tk.Button(self.root, text="Salva Immagine", command=self.save_image).pack(pady=10)
+
+        tk.Button(self.root, text="Seleziona Porzione", command=self.select_area).pack(pady=10)
+        tk.Button(self.root, text="Confronta Porzione", command=self.compare_selection).pack(pady=10)   
 
         self.param_frame = tk.Frame(self.root)
         self.param_frame.pack(pady=10)
@@ -193,6 +200,85 @@ class DenoisingApp:
         offset_x = max((canvas_width - image_width) // 2, 0)
         offset_y = max((canvas_height - image_height) // 2, 0)
         canvas.move("all", offset_x, offset_y)
+
+    def select_area(self):
+        """
+        Abilita la modalità di selezione per disegnare un rettangolo sull'immagine.
+        """
+        self.original_canvas.bind("<Button-1>", self.on_button_press)
+        self.original_canvas.bind("<B1-Motion>", self.on_mouse_drag)
+        self.original_canvas.bind("<ButtonRelease-1>", self.on_button_release)
+
+    def on_button_press(self, event):
+        """
+        Memorizza le coordinate iniziali quando l'utente preme il pulsante del mouse.
+        """
+        self.rect_start = (event.x, event.y)
+
+    def on_mouse_drag(self, event):
+        """
+        Aggiorna la dimensione del rettangolo durante il trascinamento del mouse.
+        """
+        self.rect_end = (event.x, event.y)
+        if self.selection_rect:
+            self.original_canvas.delete(self.selection_rect)
+        self.selection_rect = self.original_canvas.create_rectangle(
+            self.rect_start[0], self.rect_start[1], event.x, event.y, outline='red'
+        )
+
+    def on_button_release(self, event):
+        """
+        Memorizza le coordinate finali e fissa il rettangolo selezionato.
+        """
+        self.rect_end = (event.x, event.y)
+        self.original_canvas.unbind("<Button-1>")
+        self.original_canvas.unbind("<B1-Motion>")
+        self.original_canvas.unbind("<ButtonRelease-1>")
+
+    def compare_selection(self):
+        """
+        Invoca la funzione di confronto inviando la porzione selezionata e l'immagine originale.
+        Mostra un popup con il numero di corrispondenze trovate.
+        """
+        if not (self.rect_start and self.rect_end):
+            tk.messagebox.showwarning("Selezione Porzione", "Seleziona prima una porzione dell'immagine.")
+            return
+
+        canvas_coords = self.original_canvas.bbox(tk.ALL)
+        if canvas_coords:
+            canvas_x1, canvas_y1, canvas_x2, canvas_y2 = canvas_coords
+            canvas_width = canvas_x2 - canvas_x1
+            canvas_height = canvas_y2 - canvas_y1
+
+            zoom_scale_x = canvas_width / self.original_image.shape[1]
+            zoom_scale_y = canvas_height / self.original_image.shape[0]
+
+            x1, y1 = self.rect_start
+            x2, y2 = self.rect_end
+            x1 = int((x1 - canvas_x1) / zoom_scale_x)
+            x2 = int((x2 - canvas_x1) / zoom_scale_x)
+            y1 = int((y1 - canvas_y1) / zoom_scale_y)
+            y2 = int((y2 - canvas_y1) / zoom_scale_y)
+
+            selected_portion = self.original_image[y1:y2, x1:x2]
+            selected_coords = (x1, y1, x2 - x1, y2 - y1)
+
+            if selected_portion.size == 0:
+                tk.messagebox.showwarning("Selezione Porzione", "La selezione è vuota.")
+                return
+            
+            selected_pil_image = Image.fromarray(selected_portion)
+            selected_pil_image.save("selected_portion.png")
+            selected_pil_image.show()
+
+            # Invoca la funzione di confronto nel modulo compare
+            match_count = compare.find_matches(self.original_image, selected_portion, selected_coords, similarity_threshold=0.997)
+
+            # Mostra un popup con il numero di corrispondenze trovate
+            tk.messagebox.showinfo("Corrispondenze trovate", f"Numero di corrispondenze: {match_count}")
+        else:
+            tk.messagebox.showwarning("Errore", "Non è possibile ottenere le coordinate del canvas.")
+
 
 if __name__ == "__main__":
     root = tk.Tk()

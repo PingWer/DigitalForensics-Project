@@ -2,8 +2,6 @@ import cv2
 import numpy as np
 
 def calculate_pixel_similarity(image1, image2):
-    if image1.shape != image2.shape:
-        raise ValueError("Le immagini devono avere la stessa forma per il calcolo della somiglianza.")
     
     difference = np.abs(image1.astype(np.float32) - image2.astype(np.float32))
     mean_difference = np.mean(difference)

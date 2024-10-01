@@ -2,12 +2,12 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
-import denoise  # Assicurati che questo modulo contenga le funzioni necessarie
+import denoise 
 import logging
 import os
 import numpy as np
 
-# Configurazione del logging
+# Logging
 log_file = os.path.join(os.path.dirname(__file__), "app_log.txt")
 logging.basicConfig(
     filename=log_file, 
@@ -21,7 +21,6 @@ class DenoisingApp:
         self.root = root
         self.root.title("Filtro di Denoising")
 
-        # Variabili per i parametri dei filtri
         self.h_var = tk.DoubleVar(value=10)
         self.hColor_var = tk.DoubleVar(value=10)
         self.ksize_var = tk.IntVar(value=5)
@@ -29,10 +28,9 @@ class DenoisingApp:
         self.sigmaColor_var = tk.DoubleVar(value=75)
         self.sigmaSpace_var = tk.DoubleVar(value=75)
         self.freq_threshold_var = tk.DoubleVar(value=10)
-        self.center_zone_var = tk.IntVar(value=10)  # Percentuale della zona centrale da evitare
-        self.filter_thickness_var = tk.IntVar(value=5)  # Spessore del filtro
+        self.center_zone_var = tk.IntVar(value=10) 
+        self.filter_thickness_var = tk.IntVar(value=5)  
         
-        # Variabili per la selezione dell'area
         self.image_path = None
         self.original_image = None
         self.processed_image = None
@@ -148,7 +146,6 @@ class DenoisingApp:
             self.log_action(f"Rimozione rumore periodico applicata con parametri: {params}")
 
         elif filter_type == 'auto_periodic_noise':
-            # Rimuovi l'argomento 'center_zone' se non è accettato dalla funzione
             filter_thickness = self.filter_thickness_var.get()
             self.processed_image = denoise.remove_auto_periodic_noise(image, soglia=self.freq_threshold_var.get(), center_zone=self.center_zone_var.get(), filter_thickness=filter_thickness)
             params = f"freq_threshold: {self.freq_threshold_var.get()}, filter_thickness: {filter_thickness}"
@@ -176,29 +173,24 @@ class DenoisingApp:
             self.log_action(f"Filtro Bilaterale applicato con parametri: {params}")
 
         else:
-            self.processed_image = self.original_image  # Nessun filtro applicato
+            self.processed_image = self.original_image 
         
-        # Aggiorna i canvas delle immagini
         self.display_images()
 
     def display_images(self):
-        # Convertire le immagini in formato PIL
         original_image_pil = Image.fromarray(self.original_image)
         processed_image_pil = Image.fromarray(self.processed_image)
 
-        # Convertire in formato Tkinter
         original_image_tk = ImageTk.PhotoImage(original_image_pil)
         processed_image_tk = ImageTk.PhotoImage(processed_image_pil)
 
-        # Aggiornare i canvas
         self.original_canvas.create_image(0, 0, anchor=tk.NW, image=original_image_tk)
-        self.original_canvas.image = original_image_tk  # mantenere un riferimento
+        self.original_canvas.image = original_image_tk 
 
         self.processed_canvas.create_image(0, 0, anchor=tk.NW, image=processed_image_tk)
-        self.processed_canvas.image = processed_image_tk  # mantenere un riferimento
+        self.processed_canvas.image = processed_image_tk 
 
     def select_area(self):
-        # Funzionalità per selezionare un'area dell'immagine
         self.rect_start = None
         self.rect_end = None
         self.selection_rect = None
@@ -208,24 +200,20 @@ class DenoisingApp:
         self.original_canvas.bind("<ButtonRelease-1>", self.on_button_release)
 
     def on_button_press(self, event):
-        # Inizio della selezione dell'area
         self.rect_start = (event.x, event.y)
         self.selection_rect = self.original_canvas.create_rectangle(self.rect_start[0], self.rect_start[1], self.rect_start[0], self.rect_start[1], outline="red")
 
     def on_mouse_drag(self, event):
-        # Aggiornamento della selezione dell'area
         if self.selection_rect:
             self.original_canvas.coords(self.selection_rect, self.rect_start[0], self.rect_start[1], event.x, event.y)
 
     def on_button_release(self, event):
-        # Fine della selezione dell'area
         self.rect_end = (event.x, event.y)
         self.original_canvas.unbind("<ButtonPress-1>")
         self.original_canvas.unbind("<B1-Motion>")
         self.original_canvas.unbind("<ButtonRelease-1>")
 
     def compare_selection(self):
-        # Funzionalità per confrontare le immagini
         if not self.rect_start or not self.rect_end:
             messagebox.showwarning("Confronto", "Nessuna area selezionata per il confronto.")
             return
@@ -233,10 +221,8 @@ class DenoisingApp:
         x1, y1 = min(self.rect_start[0], self.rect_end[0]), min(self.rect_start[1], self.rect_end[1])
         x2, y2 = max(self.rect_start[0], self.rect_end[0]), max(self.rect_start[1], self.rect_end[1])
 
-        # Estrazione dell'area selezionata dall'immagine originale
         selected_area = self.original_image[y1:y2, x1:x2]
         
-        # Mostrare l'area selezionata in una nuova finestra
         selected_area_pil = Image.fromarray(selected_area)
         selected_area_tk = ImageTk.PhotoImage(selected_area_pil)
 
@@ -245,7 +231,7 @@ class DenoisingApp:
         comparison_canvas = tk.Canvas(comparison_window, width=selected_area.shape[1], height=selected_area.shape[0])
         comparison_canvas.pack()
         comparison_canvas.create_image(0, 0, anchor=tk.NW, image=selected_area_tk)
-        comparison_canvas.image = selected_area_tk  # mantenere un riferimento
+        comparison_canvas.image = selected_area_tk
 
         self.log_action("Confronto effettuato su area selezionata.")
 

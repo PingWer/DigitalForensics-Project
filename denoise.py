@@ -30,41 +30,38 @@ def filter_frequencies(image, threshold_factor=2.0):
 
 
 def filter_frequencies_auto(img, soglia, center_zone=None, filter_thickness=0):
-    # Verifica se l'immagine è a colori (3 canali)
     if img.ndim == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # Converti in scala di grigi
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
 
-    # Passo 1: Applicazione della trasformata di Fourier
+    #Fourier
     dft = np.fft.fft2(img)
     dft_shift = np.fft.fftshift(dft)
 
     righe, colonne = img.shape
     centro_riga, centro_colonna = righe // 2, colonne // 2
 
-    # Creazione di un filtro che blocca le frequenze lungo le linee centrali, ma esclude il centro
+    # Filtro geometrico in frequenza 
     filtro = np.ones((righe, colonne), np.uint8)
 
-    # Se center_zone non è specificato, usa un valore predefinito
     if center_zone is None:
-        center_zone = 10  # Dimensione della finestra di tolleranza
+        center_zone = 10 
 
-    # Assicurati che tutti i parametri siano interi
+    # Usiamo parametri interi per semplificare i calcoli
     soglia = int(soglia)
     center_zone = int(center_zone)
     filter_thickness = int(filter_thickness)
 
-    # Calcola il raggio in base alla soglia
     raggio = soglia
 
-    # Blocco delle frequenze lungo la linea verticale, escludendo il centro
+    # Rimozione della frequenza in verticale
     filtro[:, centro_colonna - filter_thickness:centro_colonna + filter_thickness + 1] = 0
     filtro[centro_riga - center_zone:centro_riga + center_zone + 1,
-           centro_colonna - raggio:centro_colonna + raggio + 1] = 1  # Mantiene il centro intatto
+           centro_colonna - raggio:centro_colonna + raggio + 1] = 1
 
-    # Blocco delle frequenze lungo la linea orizzontale, escludendo il centro
+    # Rimozione della frequenza in verticale
     filtro[centro_riga - filter_thickness:centro_riga + filter_thickness + 1, :] = 0
     filtro[centro_riga - raggio:centro_riga + raggio + 1,
-           centro_colonna - center_zone:centro_colonna + center_zone + 1] = 1  # Mantiene il centro intatto
+           centro_colonna - center_zone:centro_colonna + center_zone + 1] = 1
 
     # Applicazione del filtro notch allo spettro di Fourier
     dft_shift_filtrato = dft_shift * filtro
